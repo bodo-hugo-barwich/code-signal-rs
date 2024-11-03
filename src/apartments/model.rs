@@ -18,6 +18,8 @@ const BUILDING_FILE: &'static str = "building.yaml";
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Apartment {
     pub code: String,
+    pub floor: u16,
+    pub door: String,
     pub occupied: bool,
 }
 
@@ -27,7 +29,7 @@ pub struct Apartment {
 /// Structure representing a building floor containing several apartments
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Floor {
-    pub number: i32,
+    pub number: u16,
     pub apartments: Vec<Apartment>,
 }
 
@@ -44,9 +46,41 @@ pub struct Building {
 // Structure Apartment Implementation
 
 impl Apartment {
-    pub fn from_code(apartment_code: String, occupied: bool) -> Self {
+    pub fn from_code(apartment_code: &str, occupied: bool) -> Self {
+        let mut floor_number = String::new();
+        let mut door_letter = String::new();
+        let apt_upper = apartment_code.to_uppercase();
+
+        for apt_char in apt_upper.chars() {
+            if apt_char.is_numeric() {
+                floor_number.push(apt_char);
+            } else if apt_char.is_alphabetic() {
+                door_letter.push(apt_char);
+            }
+        }
+
+        let floor = match floor_number.parse::<u16>() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("failed to parse '{}': {:?}", floor_number, e);
+                0
+            }
+        };
+
         Apartment {
-            code: apartment_code,
+            code: apt_upper,
+            floor: floor,
+            door: door_letter,
+            occupied: occupied,
+        }
+    }
+
+    pub fn from_floor_door(floor: u16, door: &str, occupied: bool) -> Self {
+        let door_letter = door.to_uppercase();
+        Apartment {
+            code: format!("{}{}", floor, door_letter.as_str()),
+            floor: floor,
+            door: door_letter,
             occupied: occupied,
         }
     }

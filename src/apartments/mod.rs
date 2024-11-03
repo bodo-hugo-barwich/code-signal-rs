@@ -18,8 +18,7 @@ pub fn main(options: &AppOptions) -> i32 {
             floor.number = floor_idx;
 
             for door_letter in ["A", "B", "C"] {
-                let apartment =
-                    Apartment::from_code(format!("{}{}", floor_idx, door_letter), false);
+                let apartment = Apartment::from_floor_door(floor_idx, door_letter, false);
 
                 floor.apartments.push(apartment);
             }
@@ -36,16 +35,29 @@ pub fn main(options: &AppOptions) -> i32 {
     if let Some(Commands::Apartments { occupy, .. }) = &options.command {
         match occupy {
             Some(apt) => {
+                let apt_upper = apt.to_uppercase();
                 let mut apt_match: Option<&Apartment> = None;
 
                 for floor in &mut building.floors {
                     for apartment in &mut floor.apartments {
-                        if apartment.code == *apt {
-                            if options.verbosity > 0 {
-                                println!("Apartment '{}': Apartment occupied now.", &apt);
-                            }
+                        if apartment.code == apt_upper {
+                            if !apartment.occupied {
+                                if options.verbosity > 0 {
+                                    println!("Apartment '{}': Apartment occupied now.", &apt_upper);
+                                }
 
-                            apartment.occupied = true;
+                                apartment.occupied = true;
+                            } else {
+                                if options.verbosity > 0 {
+                                    eprintln!(
+                                        "Apartment '{}': Apartment is already occupied!",
+                                        &apt_upper
+                                    );
+                                }
+
+                                // Mark command as failed
+                                ierr = 1;
+                            }
 
                             apt_match = Some(apartment);
                         }
@@ -59,6 +71,20 @@ pub fn main(options: &AppOptions) -> i32 {
 
                     ierr = 1;
                 }
+            }
+            None => {}
+        }
+    }
+
+    if let Some(Commands::Apartments { add, .. }) = &options.command {
+        match add {
+            Some(apt) => {
+                let search_apt = Apartment::from_code(&*apt, false);
+
+                println!(
+                    "Apartment '{}': Add Apartment {:?}",
+                    &search_apt.code, search_apt
+                );
             }
             None => {}
         }

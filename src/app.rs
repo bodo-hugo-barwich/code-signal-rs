@@ -23,6 +23,10 @@ pub enum Commands {
         /// occupy apartment of given code
         #[arg(short, long)]
         occupy: Option<String>,
+
+        /// occupy apartment of given code
+        #[arg(short, long)]
+        add: Option<String>,
     },
     /// bookshelf listing excercise
     Bookshelf {},
