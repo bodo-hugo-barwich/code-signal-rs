@@ -1,0 +1,13 @@
+#Exclude Project Files
+.project
+.pydevproject
+Cargo.lock
+
+#Exclude Build Files
+target
+target/**
+*/target
+*/target/**
+
+#Exclude Runtime Logs
+*.log

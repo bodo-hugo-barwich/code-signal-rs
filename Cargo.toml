@@ -1,0 +1,21 @@
+[package]
+name = "code_signal"
+version = "0.1.0"
+authors = ["Bodo Hugo Barwich <b.barwich@hotmail.com>"]
+edition = "2021"
+
+[[bin]]
+name = "code-signal"
+path = "src/main.rs"
+
+[lib]
+name = "code_signal"
+path = "src/lib.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "<4.5", features = ["derive"] }
+serde = { version = "1.0.106", features = ["derive"] }
+serde_derive = "1.0.106"
+serde_yaml = "=0.8.11"
