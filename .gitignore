@@ -11,3 +11,6 @@ target/**
 
 #Exclude Runtime Logs
 *.log
+
+#Exclude Local Data
+data/**
