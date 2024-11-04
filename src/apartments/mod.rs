@@ -139,8 +139,12 @@ pub fn main(options: &AppOptions) -> i32 {
                                 }
 
                                 apt_match = Some(apartment);
+
+                                break;
                             }
                         }
+
+                        break;
                     }
                 }
 
