@@ -15,7 +15,7 @@ const BUILDING_FILE: &'static str = "building.yaml";
 // Structure Apartment Declaration
 
 /// Structure representing an apartment
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Apartment {
     pub code: String,
     pub floor: u16,
@@ -27,7 +27,7 @@ pub struct Apartment {
 // Structure Floor Declaration
 
 /// Structure representing a building floor containing several apartments
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Floor {
     pub number: u16,
     pub apartments: Vec<Apartment>,
