@@ -398,54 +398,69 @@ mod apartments_tests {
         Ok(())
     }
 
-	fn parse_debug_listing(listing: &str) -> Result<HashMap<u16, Floor>, Error> {
-		let mut floors = HashMap::<u16, Floor>::new();
+    fn parse_debug_listing(listing: &str) -> Result<HashMap<u16, Floor>, Error> {
+        let mut floors = HashMap::<u16, Floor>::new();
 
-		let floors_exp = Regex::new(r"Floor No. (?P<floor_no>\d+):").unwrap();
+        let floors_exp = Regex::new(r"Floor No. (?P<floor_no>\d+):").map_err(|e| {
+            Error::new(
+                ErrorKind::Other,
+                format!(
+                    "Regex '{}': Expression Parsing failed: {:?}",
+                    r"Floor No. (?P<floor_no>\d+):", e
+                ),
+            )
+        })?;
 
-		for cap in floors_exp.captures_iter(listing) {
-		    println!("flr cap dmp: {:?}", cap);
+        for cap in floors_exp.captures_iter(listing) {
+            println!("flr cap dmp: {:?}", cap);
 
-		    let floor = Floor::from_string(&cap["floor_no"]).unwrap();
+            let floor = Floor::from_string(&cap["floor_no"])?;
 
-		    floors.insert(floor.number, floor);
-		}
+            floors.insert(floor.number, floor);
+        }
 
-		println!("Floors Res 1 dmp: {:?}", floors);
+        println!("Floors Res 1 dmp: {:?}", floors);
 
-		let apts_exp = Regex::new("Apartment \\{ code: \"(?P<apt_code>[^\"]+)\", floor: \\d+, door: \"\\w+\", occupied: (?P<apt_occupied>true|false) \\}").unwrap();
+        let apts_exp = Regex::new("Apartment \\{ code: \"(?P<apt_code>[^\"]+)\", floor: \\d+, door: \"\\w+\", occupied: (?P<apt_occupied>true|false) \\}").
+			map_err(|e| { Error::new(
+				ErrorKind::Other,
+				format!(
+					"Regex '{}': Expression Parsing failed: {:?}",
+					r"Floor No. (?P<floor_no>\d+):", e
+				)
+			)})?;
 
-		for cap in apts_exp.captures_iter(listing) {
-		    println!("apt cap dmp: {:?}", cap);
+        for cap in apts_exp.captures_iter(listing) {
+            println!("apt cap dmp: {:?}", cap);
 
-		    let apt_occupied = match &cap["apt_occupied"] {
-		        "true" => true,
-		        "false" => false,
-		        _ => false,
-		    };
+            let apt_occupied = match &cap["apt_occupied"] {
+                "true" => true,
+                "false" => false,
+                _ => false,
+            };
 
-		    let apt = Apartment::from_code(&cap["apt_code"], apt_occupied);
+            let apt = Apartment::from_code(&cap["apt_code"], apt_occupied);
 
-		    println!("apt (occ: '{:?}') dmp: {:?}", apt_occupied, apt);
+            println!("apt (occ: '{:?}') dmp: {:?}", apt_occupied, apt);
 
-		    match floors.get_mut(&apt.floor) {
-		        Some(ref mut f) => f.apartments.push(apt),
-		        None => {}
-		    }
-		}
+            match floors.get_mut(&apt.floor) {
+                Some(ref mut f) => f.apartments.push(apt),
+                None => {}
+            }
+        }
 
-		for floor in &mut floors {
-		    floor.1.apartments.sort();
-		}
+        for floor in &mut floors {
+            floor.1.apartments.sort();
+        }
 
-		Ok(floors)
-	}
+        Ok(floors)
+    }
 
     /// List option for the default Building…
-    /// Checking the listing debug output of the default Building through back parsing it with regex
+    /// Checking the listing debug output of the default Building through parsing it back with regex
 
     #[test]
-    fn app_apartments_list() {
+    fn option_list() {
         //-------------------------------------
         // List Apartments
 
@@ -512,10 +527,10 @@ mod apartments_tests {
     }
 
     /// Occupy option for 1 Apartment and checking the listing debug output.
-    /// Checking the listing debug output of the default Building through back parsing it with regex
+    /// Checking the listing debug output of the default Building through parsing it back with regex
 
     #[test]
-    fn app_apartments_occupy() {
+    fn option_occupy() {
         //-------------------------------------
         // Occupy 3 apartments List Apartments
         // Checking the Debug Output of the default Building through back parsing it with Regex
@@ -536,10 +551,93 @@ mod apartments_tests {
         let expected_floors: Vec<u16> = vec![1, 2];
         let expected_apt_codes: Vec<Vec<&str>> =
             vec![vec!["1A", "1B", "1C"], vec!["2A", "2B", "2C"]];
-        let expected_apt_doors: Vec<Vec<&str>> =
-			vec![vec!["A", "B", "C"], vec!["A", "B", "C"]];
+        let expected_apt_doors: Vec<Vec<&str>> = vec![vec!["A", "B", "C"], vec!["A", "B", "C"]];
         let expected_apt_occupancies: Vec<Vec<bool>> =
             vec![vec![false, false, true], vec![false, false, false]];
+
+        assert!(create_data_file(data_file).is_ok());
+
+        let ierr = apartments::main(&options, &mut output_raw, &mut error_raw);
+
+        let output = String::from_utf8_lossy(&output_raw);
+        let error = String::from_utf8_lossy(&error_raw);
+
+        println!("Exit Code: '{}'", ierr);
+        println!("STDOUT: '{}'", output);
+        println!("STDERR: '{}'", error);
+
+        assert_eq!(ierr, 0);
+
+        let floors = parse_debug_listing(&output).unwrap();
+
+        println!("Floors Res 2 dmp: {:?}", floors);
+
+        assert_eq!(floors.len(), expected_floors.len());
+
+        for flr_idx in 0..expected_floors.len() {
+            assert!(floors.get(&expected_floors[flr_idx]).is_some());
+
+            match floors.get(&expected_floors[flr_idx]) {
+                Some(f) => {
+                    for apt_idx in 0..expected_apt_codes[flr_idx].len() {
+                        assert_eq!(
+                            f.apartments[apt_idx].code,
+                            expected_apt_codes[flr_idx][apt_idx]
+                        );
+                        assert_eq!(f.apartments[apt_idx].floor, expected_floors[flr_idx]);
+                    }
+
+                    for apt_idx in 0..expected_apt_doors[flr_idx].len() {
+                        assert_eq!(
+                            f.apartments[apt_idx].door,
+                            expected_apt_doors[flr_idx][apt_idx]
+                        );
+                    }
+
+                    for apt_idx in 0..expected_apt_occupancies[flr_idx].len() {
+                        assert_eq!(
+                            f.apartments[apt_idx].occupied,
+                            expected_apt_occupancies[flr_idx][apt_idx]
+                        );
+                    }
+                }
+                None => {}
+            }
+        }
+    }
+
+    /// Add option for 1 Apartment and checking the listing debug output.
+    /// Checking the listing debug output of the default Building through parsing it back with regex
+
+    #[test]
+    fn option_add() {
+        //-------------------------------------
+        // Occupy 3 apartments List Apartments
+        // Checking the Debug Output of the default Building through back parsing it with Regex
+
+        let data_file = Path::new("apartments_add.yml");
+        let command = Commands::Apartments {
+            list: true,
+            occupy: None,
+            add: Some("5ac".to_string()),
+        };
+        let options = AppOptions {
+            verbosity: 0,
+            file: Some(data_file.to_string_lossy().to_string()),
+            command: Some(command),
+        };
+        let mut output_raw = Vec::new();
+        let mut error_raw = Vec::new();
+        let expected_floors: Vec<u16> = vec![1, 2, 5];
+        let expected_apt_codes: Vec<Vec<&str>> =
+            vec![vec!["1A", "1B", "1C"], vec!["2A", "2B", "2C"], vec!["5AC"]];
+        let expected_apt_doors: Vec<Vec<&str>> =
+            vec![vec!["A", "B", "C"], vec!["A", "B", "C"], vec!["AC"]];
+        let expected_apt_occupancies: Vec<Vec<bool>> = vec![
+            vec![false, false, false],
+            vec![false, false, false],
+            vec![false],
+        ];
 
         assert!(create_data_file(data_file).is_ok());
 
