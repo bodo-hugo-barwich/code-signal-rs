@@ -1,6 +1,6 @@
-use std::fs;
-//use std::fs::File;
 use std::ffi::OsStr;
+use std::fs;
+use std::io;
 use std::io::{Error, ErrorKind};
 use std::path::{Component, Path, PathBuf};
 
@@ -40,6 +40,9 @@ pub struct Floor {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Building {
     pub floors: Vec<Floor>,
+
+    #[serde(skip_serializing)]
+    pub verbosity: Option<u8>,
 }
 
 //==============================================================================
@@ -87,18 +90,40 @@ impl Apartment {
 }
 
 //==============================================================================
-// Structure Apartment Implementation
+// Structure Floor Implementation
+
+impl Floor {
+    pub fn from_string(floor_number: &str) -> Result<Self, Error> {
+        match floor_number.parse::<u16>() {
+            Ok(u) => Ok(Floor {
+                number: u,
+                apartments: Vec::<Apartment>::new(),
+            }),
+            Err(e) => Err(Error::new(
+                ErrorKind::Other,
+                format!("Building: Conversion to YAML string failed: {:?}", e),
+            )),
+        }
+    }
+}
+
+//==============================================================================
+// Structure Building Implementation
 
 impl Building {
-    pub fn from_file() -> Self {
-        Self::from_custom_file(Path::new(&*BUILDING_FILE))
+    pub fn from_file(verbosity: Option<u8>) -> Self {
+        Self::from_custom_file(Path::new(&*BUILDING_FILE), verbosity)
     }
 
-    pub fn from_custom_file(file: &Path) -> Self {
+    pub fn from_custom_file(file: &Path, verbosity: Option<u8>) -> Self {
         let mut building: Option<Building> = None;
         let mut data_file: Option<PathBuf> = None;
+        let verbose = match verbosity {
+            Some(v) => v,
+            None => 1,
+        };
 
-        let main_dir: Option<PathBuf> = match try_find_main_directory() {
+        let main_dir: Option<PathBuf> = match try_find_main_directory(verbosity) {
             Ok(d) => Some(d),
             Err(e) => {
                 eprintln!("Main Directory: Directory could not be found: {:?}", e);
@@ -107,20 +132,23 @@ impl Building {
         };
 
         if let Some(d) = main_dir {
-            println!("Main Directory: '{}'", d.display());
+            if verbose > 1 {
+                println!("Main Directory: '{}'", d.display());
+            }
 
             let mut data_dir = PathBuf::from(d.as_path());
 
             data_dir.push("data");
 
-            data_file = match try_find_file(data_dir.as_path(), file) {
+            data_file = match try_find_file(data_dir.as_path(), file, verbosity) {
                 Ok(f) => Some(f),
-                Err(_) => match try_find_file(d.as_path(), file) {
+                Err(_) => match try_find_file(d.as_path(), file, verbosity) {
                     Ok(f) => Some(f),
                     Err(e) => {
                         eprintln!(
                             "Data File '{}': File could not be found: {:?}",
-                            BUILDING_FILE, e
+                            &file.display(),
+                            e
                         );
                         None
                     }
@@ -129,7 +157,7 @@ impl Building {
         }
 
         if let Some(f) = data_file {
-            building = match try_building_from_file(&f) {
+            building = match try_building_from_file(&f, verbosity) {
                 Ok(cfg) => Some(cfg),
                 Err(e) => {
                     eprintln!("Data File {:?}: File could not be read: {:?}", f, e);
@@ -138,14 +166,12 @@ impl Building {
             };
         }
 
-        if building.is_none() {
-            eprintln!("Falling back to default configuration ...");
-            building = Some(Building::default());
-        }
-
         match building {
             Some(b) => b,
-            None => Building::default(),
+            None => {
+                eprintln!("Falling back to default configuration ...");
+                Building::default()
+            }
         }
     }
 
@@ -153,11 +179,35 @@ impl Building {
         self.to_custom_file(Path::new(&*BUILDING_FILE))
     }
 
+    pub fn to_yaml(&self) -> Result<String, Error> {
+        // Serialize it to a YAML string.
+        let yaml = serde_yaml::to_string(self).map_err(|e| {
+            Error::new(
+                ErrorKind::Other,
+                format!("Building: Conversion to YAML string failed: {:?}", e),
+            )
+        })?;
+
+        Ok(yaml)
+    }
+
+    pub fn print(&self, output: &mut impl io::Write) -> Result<(), Error> {
+        let yaml = self.to_yaml()?;
+
+        output.write_fmt(format_args!("{}", yaml))?;
+
+        Ok(())
+    }
+
     pub fn to_custom_file(&self, file: &Path) -> Result<(), Error> {
         let mut data_file = PathBuf::from(file);
+        let verbose = match self.verbosity {
+            Some(v) => v,
+            None => 1,
+        };
 
         if !path_is_absolute(data_file.as_path()) {
-            let main_dir: Option<PathBuf> = match try_find_main_directory() {
+            let main_dir: Option<PathBuf> = match try_find_main_directory(self.verbosity) {
                 Ok(d) => Some(d),
                 Err(e) => {
                     eprintln!("Main Directory: Directory could not be found: {:?}", e);
@@ -166,7 +216,9 @@ impl Building {
             };
 
             if let Some(d) = main_dir {
-                println!("Main Directory: '{}'", d.display());
+                if verbose > 1 {
+                    println!("Main Directory: '{}'", d.display());
+                }
 
                 let mut data_dir = PathBuf::from(d.as_path());
 
@@ -190,21 +242,23 @@ impl Building {
 
                 if create_dir {
                     match fs::create_dir_all(data_dir.as_path()) {
-                Ok(()) => {
-                  println!("Data Directory '{}': Directory was created.", data_dir.display())
-                },
-                Err(e) => {
-                  return Err::<(), std::io::Error>(Error::new(
-                       ErrorKind::Other,
-                       format!(
-                           "Data Directory '{}' - Data File {:?}: Data Directory could not be created: {:?}",
-                           data_dir.display(),
-                           file.file_name(),
-                           e
-                       )
-                   ))
-                }
-              }
+                		Ok(()) => {
+							if verbose > 0 {
+			                  	println!("Data Directory '{}': Directory was created.", data_dir.display())
+							}
+                		},
+		                Err(e) => {
+		                  return Err::<(), std::io::Error>(Error::new(
+		                       ErrorKind::Other,
+		                       format!(
+		                           "Data Directory '{}' - Data File {:?}: Data Directory could not be created: {:?}",
+		                           data_dir.display(),
+		                           file.file_name(),
+		                           e
+		                       )
+		                   ))
+		                }
+		              }
                 }
             } else {
                 //Config File does not exist
@@ -226,13 +280,19 @@ impl Building {
 //==============================================================================
 // Auxiliary Functions
 
-fn try_find_file(current: &Path, file: &Path) -> Result<PathBuf, Error> {
+fn try_find_file(current: &Path, file: &Path, verbosity: Option<u8>) -> Result<PathBuf, Error> {
     let mut search_dir: Option<&Path> = Some(current);
     let mut find_file: Option<PathBuf> = None;
+    let verbose = match verbosity {
+        Some(v) => v,
+        None => 1,
+    };
 
     while search_dir.is_some() && find_file.is_none() {
         if let Some(d) = search_dir {
-            println!("Search Directory: '{}'", d.display());
+            if verbose > 1 {
+                println!("Search Directory: '{}'", d.display());
+            }
 
             let mut search_file = PathBuf::from(d);
 
@@ -269,9 +329,13 @@ fn try_find_file(current: &Path, file: &Path) -> Result<PathBuf, Error> {
     } //if let Some(f) = find_file
 }
 
-fn try_find_main_directory() -> Result<PathBuf, Error> {
+pub fn try_find_main_directory(verbosity: Option<u8>) -> Result<PathBuf, Error> {
     let cargo_file = Path::new("Cargo.toml");
     let mut find_dir: Option<PathBuf> = None;
+    let verbose = match verbosity {
+        Some(v) => v,
+        None => 1,
+    };
 
     let mut search_dir = std::env::current_dir().map_err(|e| {
         Error::new(
@@ -282,9 +346,11 @@ fn try_find_main_directory() -> Result<PathBuf, Error> {
             ),
         )
     })?;
-    println!("Working Directory: '{}'", search_dir.display());
+    if verbose > 1 {
+        println!("Working Directory: '{}'", search_dir.display());
+    }
 
-    match try_find_file(search_dir.as_path(), cargo_file) {
+    match try_find_file(search_dir.as_path(), cargo_file, verbosity) {
         Ok(f) => {
             find_dir = match f.parent() {
                 Some(p) => Some(p.to_path_buf()),
@@ -307,7 +373,7 @@ fn try_find_main_directory() -> Result<PathBuf, Error> {
         search_dir = fs::canonicalize(module_path)?;
 
         if let Some(d) = search_dir.parent() {
-            match try_find_file(d, cargo_file) {
+            match try_find_file(d, cargo_file, verbosity) {
                 Ok(f) => {
                     find_dir = match f.parent() {
                         Some(p) => Some(p.to_path_buf()),
@@ -334,7 +400,7 @@ fn try_find_main_directory() -> Result<PathBuf, Error> {
     } //if let Some(f) = find_dir
 }
 
-fn try_building_from_file(file: &Path) -> Result<Building, Error> {
+fn try_building_from_file(file: &Path, verbosity: Option<u8>) -> Result<Building, Error> {
     let building_yaml = fs::read_to_string(file).map_err(|e| {
         Error::new(
             ErrorKind::NotFound,
@@ -344,7 +410,7 @@ fn try_building_from_file(file: &Path) -> Result<Building, Error> {
             ),
         )
     })?;
-    let building: Building = serde_yaml::from_str(&building_yaml).map_err(|e| {
+    let mut building: Building = serde_yaml::from_str(&building_yaml).map_err(|e| {
         Error::new(
             ErrorKind::Other,
             format!(
@@ -355,31 +421,28 @@ fn try_building_from_file(file: &Path) -> Result<Building, Error> {
         )
     })?;
 
+    building.verbosity = verbosity;
+
     Ok(building)
 }
 
 fn try_building_to_file(building: &Building, file: &Path) -> Result<(), Error> {
     // Serialize it to a YAML string.
-    let yaml = serde_yaml::to_string(building).map_err(|e| {
-        Error::new(
-            ErrorKind::Other,
-            format!("Building: Conversion to YAML string failed: {:?}", e),
-        )
-    })?;
+    let yaml = building.to_yaml()?;
 
     fs::write(file, yaml.as_bytes())?;
 
     Ok(())
 }
 
-fn path_is_absolute(file: &Path) -> bool {
+pub fn path_is_absolute(file: &Path) -> bool {
     let mut components = file.components();
 
     components.next() == Some(Component::RootDir)
 }
 
 #[allow(dead_code)]
-fn find_path_parent(current: &Path, name: &str) -> Option<PathBuf> {
+pub fn find_path_parent(current: &Path, name: &str) -> Option<PathBuf> {
     let mut odir = None;
 
     let osearch = Some(OsStr::new(name));
@@ -397,5 +460,73 @@ fn find_path_parent(current: &Path, name: &str) -> Option<PathBuf> {
     match odir {
         Some(d) => Some(PathBuf::from(d)),
         None => None,
+    }
+}
+
+//==============================================================================
+// Unit Tests
+
+#[test]
+fn apartment_from_code() {
+    //-------------------------------------
+    // Create Apartment Structure from Apartment Code
+
+    let apt_codes = vec!["7c", "11A", "%13AB", "#17C!"];
+    let apt_occupancies = vec![false, true, true, false];
+    let mut apts = Vec::<Apartment>::with_capacity(4);
+    let expected_floors: Vec<u16> = vec![7, 11, 13, 17];
+    let expected_doors = vec!["C", "A", "AB", "C"];
+    let expected_occupancies = vec![false, true, true, false];
+
+    for apt_idx in 0..apt_codes.len() {
+        apts.push(Apartment::from_code(
+            apt_codes[apt_idx],
+            apt_occupancies[apt_idx],
+        ));
+    }
+
+    println!("apts: {:?}", apts);
+
+    assert_eq!(apts.len(), apt_codes.len());
+
+    for apt_idx in 0..apt_codes.len() {
+        assert_eq!(apts[apt_idx].code, apt_codes[apt_idx].to_uppercase());
+        assert_eq!(apts[apt_idx].floor, expected_floors[apt_idx]);
+        assert_eq!(apts[apt_idx].door, expected_doors[apt_idx]);
+        assert_eq!(apts[apt_idx].occupied, expected_occupancies[apt_idx]);
+    }
+}
+
+#[test]
+fn apartment_from_floor_door() {
+    //-------------------------------------
+    // Create Apartment from Floor and Door
+
+    let apt_floors = vec![7, 11, 13, 17];
+    let apt_doors = vec!["c", "E", "AB", "G"];
+    let apt_occupancies = vec![false, true, true, false];
+    let mut apts = Vec::<Apartment>::with_capacity(4);
+    let expected_codes = vec!["7C", "11E", "13AB", "17G"];
+    let expected_floors: Vec<u16> = vec![7, 11, 13, 17];
+    let expected_doors = vec!["C", "E", "AB", "G"];
+    let expected_occupancies = vec![false, true, true, false];
+
+    for apt_idx in 0..apt_floors.len() {
+        apts.push(Apartment::from_floor_door(
+            apt_floors[apt_idx],
+            apt_doors[apt_idx],
+            apt_occupancies[apt_idx],
+        ));
+    }
+
+    println!("apts: {:?}", apts);
+
+    assert_eq!(apts.len(), expected_codes.len());
+
+    for apt_idx in 0..expected_codes.len() {
+        assert_eq!(apts[apt_idx].code, expected_codes[apt_idx]);
+        assert_eq!(apts[apt_idx].floor, expected_floors[apt_idx]);
+        assert_eq!(apts[apt_idx].door, expected_doors[apt_idx]);
+        assert_eq!(apts[apt_idx].occupied, expected_occupancies[apt_idx]);
     }
 }

@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::io;
 
 /// Code Signal Rust Exercises
 #[derive(Parser, Default, Debug)]
@@ -8,6 +9,10 @@ pub struct AppOptions {
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbosity: u8,
 
+    /// file where the output will be stored (use ` - ` to print to STDOUT)
+    #[arg(short, long)]
+    pub file: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
@@ -16,7 +21,8 @@ pub struct AppOptions {
 pub enum Commands {
     /// apartment building exercise
     Apartments {
-        /// lists apartments
+        /// lists apartments.
+        /// This will cause conflicts with YAML output on STDOUT with option `-f -`
         #[arg(short, long)]
         list: bool,
 
@@ -24,7 +30,7 @@ pub enum Commands {
         #[arg(short, long)]
         occupy: Option<String>,
 
-        /// occupy apartment of given code
+        /// add apartment of given code
         #[arg(short, long)]
         add: Option<String>,
     },
@@ -71,23 +77,59 @@ impl RunExercises {
      * Administration Methods
      */
 
-    pub fn run(&mut self) -> i32 {
+    pub fn run(&mut self, output: &mut impl io::Write, error_output: &mut impl io::Write) -> i32 {
         self.options = AppOptions::parse();
 
-        // You can see how many times a particular flag or argument occurred
-        // Note, only flags can have multiple occurrences
-        match self.options.verbosity {
-            0 => {}
-            1 => println!("Application runs with normal verbosity."),
-            2 => println!("Application runs with detailled verbosity"),
-            _ => println!("Don't be crazy"),
+        if let Some(f) = &self.options.file {
+            if f.as_str() == "-" {
+                match self.options.verbosity {
+                    0 => {}
+                    1 => output
+                        .write_all("# Application runs with simple verbosity.\n".as_bytes())
+                        .expect("STDOUT closed"),
+                    2 => output
+                        .write_all("# Application runs with detailed verbosity\n".as_bytes())
+                        .expect("STDOUT closed"),
+                    _ => output
+                        .write_all("# Don't be crazy\n".as_bytes())
+                        .expect("STDOUT closed"),
+                }
+            } else {
+                match self.options.verbosity {
+                    0 => {}
+                    1 => output
+                        .write_all("Application runs with simple verbosity.\n".as_bytes())
+                        .expect("STDOUT closed"),
+                    2 => output
+                        .write_all("Application runs with detailed verbosity".as_bytes())
+                        .expect("STDOUT closed"),
+                    _ => output
+                        .write_all("Don't be crazy\n".as_bytes())
+                        .expect("STDOUT closed"),
+                }
+            }
+        } else {
+            // You can see how many times a particular flag or argument occurred
+            // Note, only flags can have multiple occurrences
+            match self.options.verbosity {
+                0 => {}
+                1 => output
+                    .write_all("Application runs with simple verbosity.\n".as_bytes())
+                    .expect("STDOUT closed"),
+                2 => output
+                    .write_all("Application runs with detailed verbosity\n".as_bytes())
+                    .expect("STDOUT closed"),
+                _ => output
+                    .write_all("Don't be crazy\n".as_bytes())
+                    .expect("STDOUT closed"),
+            }
         }
 
         // You can check for the existence of subcommands, and if found use their
         // matches just as you would the top level cmd
         match &self.options.command {
             Some(Commands::Apartments { .. }) => {
-                self.exit_code = crate::apartments::main(&self.options);
+                self.exit_code = crate::apartments::main(&self.options, output, error_output);
             }
             Some(Commands::Bookshelf {}) => {
                 self.exit_code = crate::bookshelf::main();
