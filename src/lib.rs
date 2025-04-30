@@ -4,9 +4,10 @@ pub mod bookshelf;
 
 use app::RunExercises;
 
+use std::io;
 use std::process::exit;
 
-fn run_app() -> i32 {
+fn run_app(output: &mut impl io::Write, error_output: &mut impl io::Write) -> i32 {
     //-------------------------------------
     //Create the Application Object
 
@@ -15,10 +16,12 @@ fn run_app() -> i32 {
     //------------------------
     //Execute the Application
 
-    let ierr = app.run();
+    let ierr = app.run(output, error_output);
 
     if app.options.verbosity > 1 {
-        println!("App dmp:\n{:?}", app);
+        output
+            .write_fmt(format_args!("App dmp:\n{:?}", app))
+            .expect("STDOUT is closed!");
     }
 
     //------------------------
@@ -26,9 +29,13 @@ fn run_app() -> i32 {
 
     if app.options.verbosity > 1 {
         if ierr == 0 {
-            eprintln!("Application finished with [{}]", ierr);
+            error_output
+                .write_fmt(format_args!("Application finished with [{}]", ierr))
+                .expect("STDERR is closed!");
         } else {
-            eprintln!("Application failed with [{}]", ierr);
+            error_output
+                .write_fmt(format_args!("Application failed with [{}]", ierr))
+                .expect("STDERR is closed!");
         }
     } //if app.options.verbosity > 0
 
@@ -36,7 +43,10 @@ fn run_app() -> i32 {
 }
 
 pub fn main() {
-    let ierr = run_app();
+    let mut output = io::stdout();
+    let mut error_output = io::stderr();
+
+    let ierr = run_app(&mut output, &mut error_output);
 
     match ierr {
         0 => {}

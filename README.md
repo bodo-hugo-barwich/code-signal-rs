@@ -13,7 +13,7 @@ more interesting since this is missing.
 The interesting part about this application are mostly the concepts behind it on
 how to:
 - implement a `clap` application with **sub-commands** and **sub-command options**
-- **serialise** and **deserialise** data structures
+- **serialise** and **deserialise** data structures with `serde`
 - find **main directory** and working directory
 - find **files** in the project directory
 
@@ -59,5 +59,5 @@ Options:
 
 # IMPLEMENTATION
 
-This is the implementation as `clap` **Console Application** with **SubCommands**.
+This is the implementation as `clap` **Console Application** with **Sub-Commands**.
 
